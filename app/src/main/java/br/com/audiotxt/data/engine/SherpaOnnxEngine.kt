@@ -10,7 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Motor STT 100% on-device baseado no modelo Whisper Tiny (multilíngue, configurado para PT-BR).
+ * Motor STT 100% on-device baseado no modelo Whisper Tiny (multilíngue, otimizado para PT-BR).
  */
 class SherpaOnnxEngine(private val context: Context) : SttEngine {
 
@@ -24,21 +24,30 @@ class SherpaOnnxEngine(private val context: Context) : SttEngine {
     override suspend fun initialize() = withContext(Dispatchers.IO) {
         if (recognizer != null) return@withContext
 
-        Log.d(TAG, "Inicializando OfflineRecognizer com Whisper Tiny...")
+        // Otimização de threads: em processadores octa-core (comuns no Android), 4 threads
+        // utilizam os núcleos de performance sem sobrecarregar os núcleos de eficiência.
+        val numCores = Runtime.getRuntime().availableProcessors()
+        val optimalThreads = when {
+            numCores >= 8 -> 4
+            numCores >= 4 -> 3
+            else -> 2
+        }
+
+        Log.d(TAG, "Inicializando OfflineRecognizer Whisper Tiny com $optimalThreads threads ($numCores núcleos detectados)...")
 
         val whisper = OfflineWhisperModelConfig().apply {
             encoder = "whisper-tiny/tiny-encoder.int8.onnx"
             decoder = "whisper-tiny/tiny-decoder.int8.onnx"
             language = "pt"
             task = "transcribe"
-            tailPaddings = 1000
+            tailPaddings = 0 // Evita preenchimento desnecessário para acelerar o processamento
         }
 
         val modelConfig = OfflineModelConfig().apply {
             this.whisper = whisper
             this.tokens = "whisper-tiny/tiny-tokens.txt"
             this.modelType = "whisper"
-            this.numThreads = 2
+            this.numThreads = optimalThreads
             this.debug = false
             this.provider = "cpu"
         }
@@ -52,57 +61,24 @@ class SherpaOnnxEngine(private val context: Context) : SttEngine {
             assetManager = context.assets,
             config = recognizerConfig
         )
-        Log.d(TAG, "OfflineRecognizer inicializado com sucesso!")
+        Log.d(TAG, "OfflineRecognizer Whisper carregado na memória!")
     }
 
     override suspend fun transcribe(samples: FloatArray, sampleRate: Int): String = withContext(Dispatchers.Default) {
         if (samples.isEmpty()) return@withContext "Nenhum áudio detectado."
 
         val currentRecognizer = recognizer ?: throw IllegalStateException("Motor de transcrição não inicializado.")
-        Log.d(TAG, "Iniciando decodificação de ${samples.size} amostras a ${sampleRate}Hz")
+        val startTime = System.currentTimeMillis()
+        Log.d(TAG, "Iniciando transcrição de ${samples.size} amostras (~${samples.size / sampleRate}s de áudio)")
 
         val stream = currentRecognizer.createStream()
         try {
             stream.acceptWaveform(samples, sampleRate)
             currentRecognizer.decode(stream)
             val result = currentRecognizer.getResult(stream)
-            var text = result.text.trim()
-            Log.d(TAG, "Resultado da transcrição primária: '$text'")
-
-            // Se retornar vazio, tenta auto-detecção de idioma como fallback
-            if (text.isEmpty()) {
-                Log.d(TAG, "Texto vazio com language=pt, tentando fallback auto-detect...")
-                val fallbackWhisper = OfflineWhisperModelConfig().apply {
-                    encoder = "whisper-tiny/tiny-encoder.int8.onnx"
-                    decoder = "whisper-tiny/tiny-decoder.int8.onnx"
-                    language = "" // Auto-detect
-                    task = "transcribe"
-                    tailPaddings = 1000
-                }
-                val fallbackModelConfig = OfflineModelConfig().apply {
-                    this.whisper = fallbackWhisper
-                    this.tokens = "whisper-tiny/tiny-tokens.txt"
-                    this.modelType = "whisper"
-                    this.numThreads = 2
-                    this.provider = "cpu"
-                }
-                val fallbackConfig = OfflineRecognizerConfig().apply {
-                    this.modelConfig = fallbackModelConfig
-                    this.decodingMethod = "greedy_search"
-                }
-                val fallbackRecognizer = OfflineRecognizer(context.assets, fallbackConfig)
-                val fallbackStream = fallbackRecognizer.createStream()
-                try {
-                    fallbackStream.acceptWaveform(samples, sampleRate)
-                    fallbackRecognizer.decode(fallbackStream)
-                    val fallbackResult = fallbackRecognizer.getResult(fallbackStream)
-                    text = fallbackResult.text.trim()
-                    Log.d(TAG, "Resultado fallback auto-detect: '$text'")
-                } finally {
-                    fallbackStream.release()
-                    fallbackRecognizer.release()
-                }
-            }
+            val elapsed = System.currentTimeMillis() - startTime
+            val text = result.text.trim()
+            Log.d(TAG, "Transcrição concluída em ${elapsed}ms: '$text'")
 
             if (text.isEmpty()) {
                 "Áudio processado, mas nenhuma palavra foi identificada com clareza."
@@ -115,7 +91,6 @@ class SherpaOnnxEngine(private val context: Context) : SttEngine {
     }
 
     override fun release() {
-        recognizer?.release()
-        recognizer = null
+        // Mantemos o modelo em cache enquanto a aplicação estiver ativa
     }
 }

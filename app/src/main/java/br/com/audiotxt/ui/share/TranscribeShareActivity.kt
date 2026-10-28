@@ -14,8 +14,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import br.com.audiotxt.AudioTxtApp
 import br.com.audiotxt.data.audio.AudioDecoder
-import br.com.audiotxt.data.engine.SherpaOnnxEngine
 import br.com.audiotxt.data.engine.SttEngine
 import kotlinx.coroutines.launch
 
@@ -29,7 +29,8 @@ class TranscribeShareActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         audioDecoder = AudioDecoder(applicationContext)
-        sttEngine = SherpaOnnxEngine(applicationContext)
+        // Reutiliza a instância singleton mantida na memória da aplicação (sem recarregar o modelo do zero)
+        sttEngine = (application as AudioTxtApp).sttEngine
 
         setContent {
             ShareBottomSheetContent(
@@ -67,12 +68,10 @@ class TranscribeShareActivity : ComponentActivity() {
                 val samples = audioDecoder.decodeToFloatArray(audioUri)
                 val durationSec = (samples.size / 16000)
 
-                uiState = TranscriptionUiState.Loading("Preparando inteligência no aparelho...")
-                sttEngine.initialize()
+                uiState = TranscriptionUiState.Loading("Transcrevendo com Whisper local (${durationSec}s)...")
+                sttEngine.initialize() // Garante que o modelo está pronto (instantâneo se já pré-carregado)
 
-                uiState = TranscriptionUiState.Loading("Transcrevendo áudio (${durationSec}s)...")
                 val text = sttEngine.transcribe(samples)
-
                 uiState = TranscriptionUiState.Success(text, durationSec)
             } catch (e: Exception) {
                 uiState = TranscriptionUiState.Error("Falha na transcrição: ${e.localizedMessage ?: "Erro desconhecido"}")
@@ -95,10 +94,5 @@ class TranscribeShareActivity : ComponentActivity() {
         }
         val shareIntent = Intent.createChooser(sendIntent, "Compartilhar texto transcrito")
         startActivity(shareIntent)
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        sttEngine.release()
     }
 }
