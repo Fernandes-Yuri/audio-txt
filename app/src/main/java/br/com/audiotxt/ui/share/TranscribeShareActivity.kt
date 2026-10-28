@@ -45,7 +45,7 @@ class TranscribeShareActivity : ComponentActivity() {
 
     private fun processIncomingAudio(intent: Intent?) {
         if (intent == null || intent.action != Intent.ACTION_SEND) {
-            uiState = TranscriptionUiState.Error("Nenhum áudio compartilhado.")
+            uiState = TranscriptionUiState.Error("Nenhum áudio compartilhado com o audio-txt.")
             return
         }
 
@@ -57,20 +57,23 @@ class TranscribeShareActivity : ComponentActivity() {
         } ?: intent.clipData?.getItemAt(0)?.uri ?: intent.data
 
         if (audioUri == null) {
-            uiState = TranscriptionUiState.Error("Não foi possível acessar o arquivo de áudio.")
+            uiState = TranscriptionUiState.Error("Não foi possível acessar o áudio compartilhado.")
             return
         }
 
         lifecycleScope.launch {
             try {
-                uiState = TranscriptionUiState.Loading("Decodificando áudio localmente...")
+                uiState = TranscriptionUiState.Loading("Decodificando áudio...")
                 val samples = audioDecoder.decodeToFloatArray(audioUri)
+                val durationSec = (samples.size / 16000)
 
-                uiState = TranscriptionUiState.Loading("Transcrevendo com inteligência on-device...")
+                uiState = TranscriptionUiState.Loading("Preparando inteligência no aparelho...")
                 sttEngine.initialize()
+
+                uiState = TranscriptionUiState.Loading("Transcrevendo áudio (${durationSec}s)...")
                 val text = sttEngine.transcribe(samples)
 
-                uiState = TranscriptionUiState.Success(text)
+                uiState = TranscriptionUiState.Success(text, durationSec)
             } catch (e: Exception) {
                 uiState = TranscriptionUiState.Error("Falha na transcrição: ${e.localizedMessage ?: "Erro desconhecido"}")
             }
@@ -81,7 +84,7 @@ class TranscribeShareActivity : ComponentActivity() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("Áudio Transcrito", text)
         clipboard.setPrimaryClip(clip)
-        Toast.makeText(this, "Texto copiado!", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Texto copiado para a área de transferência!", Toast.LENGTH_SHORT).show()
     }
 
     private fun shareText(text: String) {
