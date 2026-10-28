@@ -7,11 +7,12 @@ import android.media.MediaFormat
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Decodifica arquivos de áudio (Opus, OGG, AAC, MP3) para amostras PCM normalizadas em FloatArray (16kHz mono).
+ * Decodifica arquivos de áudio (Opus, OGG, AAC, MP3) recebidos do WhatsApp para amostras PCM FloatArray (16kHz mono).
  */
 class AudioDecoder(private val context: Context) {
 
@@ -21,11 +22,17 @@ class AudioDecoder(private val context: Context) {
 
     suspend fun decodeToFloatArray(audioUri: Uri): FloatArray = withContext(Dispatchers.IO) {
         val extractor = MediaExtractor()
-        val pfd = context.contentResolver.openFileDescriptor(audioUri, "r")
-            ?: throw IllegalArgumentException("Não foi possível abrir o arquivo de áudio.")
+        // Salva cópia temporária para garantir leitura sequencial sem falhas de seek no ContentProvider
+        val tempFile = File(context.cacheDir, "audio_incoming_${System.currentTimeMillis()}.tmp")
 
         try {
-            extractor.setDataSource(pfd.fileDescriptor)
+            context.contentResolver.openInputStream(audioUri)?.use { input ->
+                tempFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            } ?: throw IllegalArgumentException("Não foi possível acessar os bytes do áudio compartilhado.")
+
+            extractor.setDataSource(tempFile.absolutePath)
             var audioTrackIndex = -1
             var format: MediaFormat? = null
 
@@ -40,17 +47,17 @@ class AudioDecoder(private val context: Context) {
             }
 
             if (audioTrackIndex < 0 || format == null) {
-                throw IllegalStateException("Nenhuma faixa de áudio compatível encontrada.")
+                throw IllegalStateException("Nenhuma faixa de áudio compatível encontrada no arquivo.")
             }
 
             extractor.selectTrack(audioTrackIndex)
             val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
-            val sampleRate = if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+            var sampleRate = if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
                 format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             } else {
                 TARGET_SAMPLE_RATE
             }
-            val channelCount = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+            var channelCount = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
                 format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
             } else {
                 1
@@ -63,7 +70,6 @@ class AudioDecoder(private val context: Context) {
             val pcmBytes = ArrayList<Byte>()
             val bufferInfo = MediaCodec.BufferInfo()
             var isEos = false
-
             val timeoutUs = 5000L
 
             while (!isEos) {
@@ -104,8 +110,24 @@ class AudioDecoder(private val context: Context) {
                 }
             }
 
+            // Atualiza com formato de saída real após processamento
+            try {
+                val outFormat = codec.outputFormat
+                if (outFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                    sampleRate = outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                }
+                if (outFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                    channelCount = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                }
+            } catch (_: Exception) {
+            }
+
             codec.stop()
             codec.release()
+
+            if (pcmBytes.isEmpty()) {
+                return@withContext FloatArray(0)
+            }
 
             // Converte bytes PCM 16-bit para shorts
             val byteArray = pcmBytes.toByteArray()
@@ -126,20 +148,20 @@ class AudioDecoder(private val context: Context) {
                 rawShorts
             }
 
-            // Resampling simples para TARGET_SAMPLE_RATE (16000 Hz) caso necessário
+            // Resampling para TARGET_SAMPLE_RATE (16000 Hz)
             val resampledShorts = if (sampleRate != TARGET_SAMPLE_RATE && sampleRate > 0) {
                 resampleLinear(monoShorts, sampleRate, TARGET_SAMPLE_RATE)
             } else {
                 monoShorts
             }
 
-            // Converte shorts para Float normalizado [-1.0f, 1.0f]
+            // Normaliza para [-1.0f, 1.0f]
             FloatArray(resampledShorts.size) { i ->
                 resampledShorts[i] / 32768.0f
             }
         } finally {
             extractor.release()
-            pfd.close()
+            tempFile.delete()
         }
     }
 

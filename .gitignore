@@ -6,6 +6,7 @@ app/build/
 *.aab
 *.aar
 app/libs/
+app/src/main/assets/
 
 # Configurações locais e IDE
 local.properties

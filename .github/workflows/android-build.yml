@@ -48,6 +48,13 @@ jobs:
           mkdir -p app/libs
           curl -L -s https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.10.40/sherpa-onnx-1.10.40.aar -o app/libs/sherpa-onnx.aar
 
+      - name: Baixar modelo Whisper Tiny PT (Assets)
+        run: |
+          mkdir -p app/src/main/assets/whisper-tiny
+          curl -L -s https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-encoder.int8.onnx -o app/src/main/assets/whisper-tiny/tiny-encoder.int8.onnx
+          curl -L -s https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-decoder.int8.onnx -o app/src/main/assets/whisper-tiny/tiny-decoder.int8.onnx
+          curl -L -s https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/tiny-tokens.txt -o app/src/main/assets/whisper-tiny/tiny-tokens.txt
+
       - name: Compilar APK Debug
         run: |
           gradle assembleDebug --no-daemon --stacktrace
