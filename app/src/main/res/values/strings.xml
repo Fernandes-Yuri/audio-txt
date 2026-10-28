@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">audio-txt</string>
+    <string name="title_transcription">Transcrição de Áudio</string>
+    <string name="btn_copy">Copiar Texto</string>
+    <string name="btn_close">Fechar</string>
+    <string name="btn_share">Compartilhar</string>
+    <string name="status_decoding">Decodificando áudio...</string>
+    <string name="status_transcribing">Transcrevendo áudio...</string>
+    <string name="status_ready">Concluído</string>
+    <string name="status_error">Erro ao processar áudio</string>
+    <string name="copied_toast">Texto copiado para a área de transferência!</string>
+    <string name="share_text_prompt">Compartilhe um áudio do WhatsApp com o audio-txt para transcrever.</string>
+</resources>

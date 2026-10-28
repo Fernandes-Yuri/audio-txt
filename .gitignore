@@ -1,0 +1,26 @@
+# Gradle e builds
+.gradle/
+build/
+app/build/
+*.apk
+*.aab
+
+# Configurações locais e IDE
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# Chaves e certificados
+*.jks
+*.keystore
+keystore.properties
+
+# Logs e arquivos temporários
+*.log
+_commit*.txt
+logcat*.txt
+
+# Instruções para Agentes (arquivo local, nunca committar)
+AGENTS.md
+AGENTS.MD
