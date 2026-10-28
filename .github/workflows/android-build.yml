@@ -43,6 +43,11 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
+      - name: Baixar runtime Sherpa-onnx (AAR)
+        run: |
+          mkdir -p app/libs
+          curl -L -s https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.10.40/sherpa-onnx-1.10.40.aar -o app/libs/sherpa-onnx.aar
+
       - name: Compilar APK Debug
         run: |
           gradle assembleDebug --no-daemon --stacktrace
